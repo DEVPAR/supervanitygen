@@ -348,17 +348,12 @@ static void announce_result(int found, const u8 result[52])
   }
 
   /* Convert Private Key to WIF */
-
-  /* Set up sha256 block for hashing the private key; length of 34 bytes */
   sha256_prepare(priv_block, 34);
   priv_block[0]=0x80;
   memcpy(priv_block+1, result, 32);
-  priv_block[33]=0x01;  /* 1=Compressed Public Key */
+  priv_block[33]=0x01;  // Compressed
 
-  /* Set up checksum block; length of 32 bytes */
   sha256_prepare(cksum_block, 32);
-
-  /* Compute checksum and copy first 4-bytes to end of private key */
   sha256_hash(cksum_block, priv_block);
   sha256_hash(checksum, cksum_block);
   memcpy(priv_block+34, checksum, 4);
@@ -369,16 +364,35 @@ static void announce_result(int found, const u8 result[52])
   else
     printf("Private Key:   %s\n", wif);
 
-  /* Convert Public Key to Compressed WIF */
+  /* Create P2SH-P2WPKH address */
+  u8 redeem_script[22];
+  redeem_script[0] = 0x00;
+  redeem_script[1] = 0x14;
+  memcpy(redeem_script + 2, result + 32, 20); // pubkey hash
 
-  /* Set up sha256 block for hashing the public key; length of 21 bytes */
-  sha256_prepare(pub_block, 21);
-  memcpy(pub_block+1, result+32, 20);
+  // HASH160 of redeem script
+  u8 redeem_hash[20];
+  {
+    SHA256_CTX sha;
+    RIPEMD160_CTX rmd;
+    u8 sha_tmp[32];
 
-  /* Compute checksum and copy first 4-bytes to end of public key */
+    SHA256_Init(&sha);
+    SHA256_Update(&sha, redeem_script, 22);
+    SHA256_Final(sha_tmp, &sha);
+
+    RIPEMD160_Init(&rmd);
+    RIPEMD160_Update(&rmd, sha_tmp, 32);
+    RIPEMD160_Final(redeem_hash, &rmd);
+  }
+
+  pub_block[0] = 0x05; // P2SH prefix
+  memcpy(pub_block + 1, redeem_hash, 20);
+
+  sha256_prepare(cksum_block, 21);
   sha256_hash(cksum_block, pub_block);
   sha256_hash(checksum, cksum_block);
-  memcpy(pub_block+21, checksum, 4);
+  memcpy(pub_block + 21, checksum, 4);
 
   b58enc(wif, pub_block, 25);
   if(quiet)
@@ -386,13 +400,13 @@ static void announce_result(int found, const u8 result[52])
   else
     printf("Address:       %s\n", wif);
 
-  /* Exit after we find 'max_count' solutions */
   if(!keep_going && found >= max_count)
     exit(0);
 
   if(!quiet)
     printf("---\n");
 }
+
 
 
 /**** Pattern Matching *******************************************************/
